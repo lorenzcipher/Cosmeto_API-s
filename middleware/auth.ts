@@ -5,8 +5,17 @@ export interface AuthenticatedRequest extends NextRequest {
   user?: TokenPayload;
 }
 
-export const authenticateToken = (handler: (req: AuthenticatedRequest) => Promise<NextResponse>) => {
-  return async (req: AuthenticatedRequest) => {
+type RouteContext = {
+  params: { [key: string]: string | string[] };
+};
+
+type RouteHandler = (
+  req: AuthenticatedRequest,
+  context?: RouteContext
+) => Promise<NextResponse>;
+
+export const authenticateToken = (handler: RouteHandler) => {
+  return async (req: NextRequest, context?: RouteContext) => {
     try {
       const authHeader = req.headers.get('authorization');
       const token = authHeader && authHeader.split(' ')[1];
@@ -19,9 +28,12 @@ export const authenticateToken = (handler: (req: AuthenticatedRequest) => Promis
       }
 
       const decoded = verifyToken(token);
-      req.user = decoded;
+      
+      // Extend the request with user info
+      const authenticatedReq = req as AuthenticatedRequest;
+      authenticatedReq.user = decoded;
 
-      return await handler(req);
+      return await handler(authenticatedReq, context);
     } catch (error) {
       return NextResponse.json(
         { success: false, message: 'Invalid or expired token' },
@@ -31,14 +43,14 @@ export const authenticateToken = (handler: (req: AuthenticatedRequest) => Promis
   };
 };
 
-export const requireAdmin = (handler: (req: AuthenticatedRequest) => Promise<NextResponse>) => {
-  return authenticateToken(async (req: AuthenticatedRequest) => {
+export const requireAdmin = (handler: RouteHandler) => {
+  return authenticateToken(async (req: AuthenticatedRequest, context?: RouteContext) => {
     if (req.user?.role !== 'admin') {
       return NextResponse.json(
         { success: false, message: 'Admin access required' },
         { status: 403 }
       );
     }
-    return await handler(req);
+    return await handler(req, context);
   });
 };
