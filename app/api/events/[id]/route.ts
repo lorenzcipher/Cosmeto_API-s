@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Event from '@/models/Event';
-import { verifyToken } from '@/middleware/auth'; // Import token verification function
+import { authenticateTokenWithParams, AuthenticatedRequest } from '@/middleware/auth';
 import { eventUpdateSchema } from '@/lib/validation';
 
 // GET single event
@@ -36,30 +36,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 // UPDATE event
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export const PUT = authenticateTokenWithParams(async (req: AuthenticatedRequest, context: { params: { [key: string]: string | string[] } }) => {
   try {
     await connectDB();
+    const { id } = context.params;
+    const eventId = Array.isArray(id) ? id[0] : id; // Handle the string | string[] type
     
-    // Authenticate user
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { success: false, message: 'Access token required' },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.substring(7);
-    const user = verifyToken(token);
-    
-    if (!user) {
-      return NextResponse.json(
-        { success: false, message: 'Invalid or expired token' },
-        { status: 401 }
-      );
-    }
-
-    const { id } = params;
     const body = await req.json();
 
     // Validate input
@@ -71,7 +53,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       );
     }
 
-    const event = await Event.findById(id);
+    const event = await Event.findById(eventId);
     if (!event) {
       return NextResponse.json(
         { success: false, message: 'Event not found' },
@@ -80,14 +62,14 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     }
 
     // Only organizer or admin can update event
-    if (event.organizer.toString() !== user.userId && user.role !== 'admin') {
+    if (event.organizer.toString() !== req.user?.userId && req.user?.role !== 'admin') {
       return NextResponse.json(
         { success: false, message: 'Access denied' },
         { status: 403 }
       );
     }
 
-    const updatedEvent = await Event.findByIdAndUpdate(id, value, { new: true })
+    const updatedEvent = await Event.findByIdAndUpdate(eventId, value, { new: true })
       .populate('organizer', 'name email')
       .populate('attendees', 'name email');
 
@@ -104,35 +86,16 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       { status: 500 }
     );
   }
-}
+});
 
 // DELETE event
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export const DELETE = authenticateTokenWithParams(async (req: AuthenticatedRequest, context: { params: { [key: string]: string | string[] } }) => {
   try {
     await connectDB();
-    
-    // Authenticate user
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { success: false, message: 'Access token required' },
-        { status: 401 }
-      );
-    }
+    const { id } = context.params;
+    const eventId = Array.isArray(id) ? id[0] : id; // Handle the string | string[] type
 
-    const token = authHeader.substring(7);
-    const user = verifyToken(token);
-    
-    if (!user) {
-      return NextResponse.json(
-        { success: false, message: 'Invalid or expired token' },
-        { status: 401 }
-      );
-    }
-
-    const { id } = params;
-
-    const event = await Event.findById(id);
+    const event = await Event.findById(eventId);
     if (!event) {
       return NextResponse.json(
         { success: false, message: 'Event not found' },
@@ -141,14 +104,14 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     }
 
     // Only organizer or admin can delete event
-    if (event.organizer.toString() !== user.userId && user.role !== 'admin') {
+    if (event.organizer.toString() !== req.user?.userId && req.user?.role !== 'admin') {
       return NextResponse.json(
         { success: false, message: 'Access denied' },
         { status: 403 }
       );
     }
 
-    await Event.findByIdAndDelete(id);
+    await Event.findByIdAndDelete(eventId);
 
     return NextResponse.json({
       success: true,
@@ -162,4 +125,4 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       { status: 500 }
     );
   }
-}
+});
