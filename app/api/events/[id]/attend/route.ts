@@ -3,12 +3,11 @@ import connectDB from '@/lib/mongodb';
 import Event from '@/models/Event';
 import { authenticateToken, AuthenticatedRequest } from '@/middleware/auth';
 
-// JOIN event - Change the parameter signature here
-export const POST = authenticateToken(async (req: AuthenticatedRequest, context) => {
+// GET single event (if this exists)
+export const GET = async (req: NextRequest, context: any) => {
   try {
     await connectDB();
     
-    // Extract id safely from context
     const id = context?.params?.id as string;
     if (!id) {
       return NextResponse.json(
@@ -16,8 +15,44 @@ export const POST = authenticateToken(async (req: AuthenticatedRequest, context)
         { status: 400 }
       );
     }
+
+    const event = await Event.findById(id).populate('organizer', 'username email');
+    if (!event) {
+      return NextResponse.json(
+        { success: false, message: 'Event not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: event
+    });
+
+  } catch (error) {
+    console.error('Get event error:', error);
+    return NextResponse.json(
+      { success: false, message: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+};
+
+// UPDATE event
+export const PUT = authenticateToken(async (req: AuthenticatedRequest, context) => {
+  try {
+    await connectDB();
     
+    const id = context?.params?.id as string;
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: 'Event ID is required' },
+        { status: 400 }
+      );
+    }
+
     const userId = req.user?.userId;
+    const body = await req.json();
 
     const event = await Event.findById(id);
     if (!event) {
@@ -27,32 +62,26 @@ export const POST = authenticateToken(async (req: AuthenticatedRequest, context)
       );
     }
 
-    // Check if user is already attending
-    if (event.attendees.includes(userId as any)) {
+    // Check if user is the organizer
+    if (event.organizer.toString() !== userId) {
       return NextResponse.json(
-        { success: false, message: 'Already attending this event' },
-        { status: 400 }
+        { success: false, message: 'Not authorized to update this event' },
+        { status: 403 }
       );
     }
 
-    // Check if event is full
-    if (event.maxAttendees && event.attendees.length >= event.maxAttendees) {
-      return NextResponse.json(
-        { success: false, message: 'Event is full' },
-        { status: 400 }
-      );
-    }
-
-    event.attendees.push(userId as any);
+    // Update event fields
+    Object.assign(event, body);
     await event.save();
 
     return NextResponse.json({
       success: true,
-      message: 'Successfully joined the event'
+      message: 'Event updated successfully',
+      data: event
     });
 
   } catch (error) {
-    console.error('Join event error:', error);
+    console.error('Update event error:', error);
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }
@@ -60,12 +89,11 @@ export const POST = authenticateToken(async (req: AuthenticatedRequest, context)
   }
 });
 
-// LEAVE event - Change the parameter signature here too
+// DELETE event
 export const DELETE = authenticateToken(async (req: AuthenticatedRequest, context) => {
   try {
     await connectDB();
     
-    // Extract id safely from context
     const id = context?.params?.id as string;
     if (!id) {
       return NextResponse.json(
@@ -73,7 +101,7 @@ export const DELETE = authenticateToken(async (req: AuthenticatedRequest, contex
         { status: 400 }
       );
     }
-    
+
     const userId = req.user?.userId;
 
     const event = await Event.findById(id);
@@ -84,24 +112,23 @@ export const DELETE = authenticateToken(async (req: AuthenticatedRequest, contex
       );
     }
 
-    // Check if user is attending
-    if (!event.attendees.includes(userId as any)) {
+    // Check if user is the organizer or admin
+    if (event.organizer.toString() !== userId && req.user?.role !== 'admin') {
       return NextResponse.json(
-        { success: false, message: 'Not attending this event' },
-        { status: 400 }
+        { success: false, message: 'Not authorized to delete this event' },
+        { status: 403 }
       );
     }
 
-    event.attendees = event.attendees.filter((attendee: any) => attendee.toString() !== userId);
-    await event.save();
+    await Event.findByIdAndDelete(id);
 
     return NextResponse.json({
       success: true,
-      message: 'Successfully left the event'
+      message: 'Event deleted successfully'
     });
 
   } catch (error) {
-    console.error('Leave event error:', error);
+    console.error('Delete event error:', error);
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }
