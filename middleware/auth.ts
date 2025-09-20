@@ -1,3 +1,4 @@
+// Alternative approach: Create a separate middleware for routes that require params
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, TokenPayload } from '@/lib/auth';
 
@@ -12,6 +13,11 @@ type RouteContext = {
 type RouteHandler = (
   req: AuthenticatedRequest,
   context?: RouteContext
+) => Promise<NextResponse>;
+
+type RouteHandlerWithParams = (
+  req: AuthenticatedRequest,
+  context: RouteContext
 ) => Promise<NextResponse>;
 
 export const authenticateToken = (handler: RouteHandler) => {
@@ -29,7 +35,35 @@ export const authenticateToken = (handler: RouteHandler) => {
 
       const decoded = verifyToken(token);
       
-      // Extend the request with user info
+      const authenticatedReq = req as AuthenticatedRequest;
+      authenticatedReq.user = decoded;
+
+      return await handler(authenticatedReq, context);
+    } catch (error) {
+      return NextResponse.json(
+        { success: false, message: 'Invalid or expired token' },
+        { status: 403 }
+      );
+    }
+  };
+};
+
+// Middleware specifically for routes with required params
+export const authenticateTokenWithParams = (handler: RouteHandlerWithParams) => {
+  return async (req: NextRequest, context: RouteContext) => {
+    try {
+      const authHeader = req.headers.get('authorization');
+      const token = authHeader && authHeader.split(' ')[1];
+
+      if (!token) {
+        return NextResponse.json(
+          { success: false, message: 'Access token required' },
+          { status: 401 }
+        );
+      }
+
+      const decoded = verifyToken(token);
+      
       const authenticatedReq = req as AuthenticatedRequest;
       authenticatedReq.user = decoded;
 

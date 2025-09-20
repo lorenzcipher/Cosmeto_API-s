@@ -3,11 +3,20 @@ import connectDB from '@/lib/mongodb';
 import Event from '@/models/Event';
 import { authenticateToken, AuthenticatedRequest } from '@/middleware/auth';
 
-// JOIN event
-export const POST = authenticateToken(async (req: AuthenticatedRequest, { params }: { params: { id: string } }) => {
+// JOIN event - Change the parameter signature here
+export const POST = authenticateToken(async (req: AuthenticatedRequest, context) => {
   try {
     await connectDB();
-    const { id } = params;
+    
+    // Extract id safely from context
+    const id = context?.params?.id as string;
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: 'Event ID is required' },
+        { status: 400 }
+      );
+    }
+    
     const userId = req.user?.userId;
 
     const event = await Event.findById(id);
@@ -51,11 +60,20 @@ export const POST = authenticateToken(async (req: AuthenticatedRequest, { params
   }
 });
 
-// LEAVE event
-export const DELETE = authenticateToken(async (req: AuthenticatedRequest, { params }: { params: { id: string } }) => {
+// LEAVE event - Change the parameter signature here too
+export const DELETE = authenticateToken(async (req: AuthenticatedRequest, context) => {
   try {
     await connectDB();
-    const { id } = params;
+    
+    // Extract id safely from context
+    const id = context?.params?.id as string;
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: 'Event ID is required' },
+        { status: 400 }
+      );
+    }
+    
     const userId = req.user?.userId;
 
     const event = await Event.findById(id);
@@ -74,7 +92,7 @@ export const DELETE = authenticateToken(async (req: AuthenticatedRequest, { para
       );
     }
 
-    event.attendees = event.attendees.filter(attendee => attendee.toString() !== userId);
+    event.attendees = event.attendees.filter((attendee: any) => attendee.toString() !== userId);
     await event.save();
 
     return NextResponse.json({
